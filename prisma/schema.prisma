@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Admin {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Reseller {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  password     String
+  name         String
+  status       String     @default("active") // active, suspended
+  stripeKey    String?    // Reseller's own Stripe key
+  allowedModules Json?      // ["ESSENTIAL", "SALES_PRO", "ELITE"] - Defined by Admin
+  merchants    Merchant[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Merchant {
+  id                  String          @id @default(uuid())
+  name                String
+  email               String          @unique
+  password            String?         // Added for login
+  status              String          @default("trial") // active, suspended, trial, pending_verification
+  planId              String?
+  plan                Plan?           @relation(fields: [planId], references: [id])
+  nicheId             String?
+  niche               NicheTemplate?  @relation(fields: [nicheId], references: [id])
+  activeModules       Json?           // ["ESSENTIAL", "SALES_PRO"] - Defined by Reseller Plan
+  mindset             String          @default("GROUNDING") // GROUNDING, CONSULTANT
+  trialEndsAt         DateTime?       // Added for trial expiration logic
+  tokenQuota          Int             @default(50000) // Monthly token limit
+  tokenUsage          Int             @default(0)     // Current month usage
+  resellerId          String?
+  reseller            Reseller?       @relation(fields: [resellerId], references: [id])
+  stripeCustomerId    String?
+  stripePaymentMethod String?         // Added for Beta-10
+  subscriptionId      String?
+  verificationCode    String?         // Added for Beta-10
+  evolutionInstance   String?         @unique
+  evolutionApiKey     String?
+  whatsappApiType     String          @default("EVOLUTION") // EVOLUTION, META
+  metaAccessToken     String?         // Meta API Token
+  metaPhoneNumberId   String?         // Meta Phone Number ID
+  metaWabaId          String?         // Meta WhatsApp Business Account ID
+  metaVerifyToken     String?         // Webhook verification token
+  aiConfig            Json?           // { name, tone, prompt }
+  lastManualMessageAt DateTime?       // Global pause timestamp
+  knowledgeBase       KnowledgeBase[]
+  interactionLogs     InteractionLog[]
+  auditLogs           AuditLog[]      // Relation to audit logs
+  chatSessions        ChatSession[]   // Per-chat pause logic
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+}
+
+model Plan {
+  id            String     @id @default(uuid())
+  name          String     @unique
+  description   String?
+  price         Float
+  type          String     @default("MERCHANT") // MERCHANT or RESELLER
+  maxTenants    Int        @default(0)
+  maxMessages   Int        @default(1000)
+  modules       Json?      // { attendance: true, sales: false, predictive: false, autoPilot: false }
+  tokenLimit    Int        @default(50000)
+  instanceLimit Int        @default(1)
+  stripePriceId String?
+  merchants     Merchant[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}
+
+model NicheTemplate {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  basePrompt  String
+  merchants   Merchant[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model ChatSession {
+  id          String   @id @default(uuid())
+  merchantId  String
+  merchant    Merchant @relation(fields: [merchantId], references: [id])
+  sender      String   // Customer phone number
+  pausedUntil DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@unique([merchantId, sender])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  merchantId  String?
+  merchant    Merchant? @relation(fields: [merchantId], references: [id])
+  resellerId  String?
+  action      String   // e.g., "CONFIG_UPDATE", "INSTANCE_DELETE"
+  details     String?  // JSON string or description
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+}
+
+model GlobalConfig {
+  id                  String   @id @default("singleton")
+  trial_enabled       Boolean  @default(true)
+  stripeSecretKey     String?
+  stripePublicKey     String?
+  stripeWebhookSecret String?
+  updatedAt           DateTime @updatedAt
+}
+
+model TrialLink {
+  id            String   @id @default(uuid())
+  code          String   @unique
+  days          Int      @default(7)
+  tokenLimit    Int      @default(50000)
+  instanceLimit Int      @default(1)
+  expiresAt     DateTime?
+  used          Boolean  @default(false)
+  usedBy        String?  // Merchant ID
+  createdAt     DateTime @default(now())
+}
+
+model AiKey {
+  id         String   @id @default(uuid())
+  key        String   @unique
+  status     String   @default("active")
+  usageCount Int      @default(0)
+  lastUsed   DateTime @default(now())
+  createdAt  DateTime @default(now())
+}
+
+model KnowledgeBase {
+  id         String   @id @default(uuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  content    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model InteractionLog {
+  id         String   @id @default(uuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  sender     String   // Customer phone number
+  question   String
+  answer     String
+  tokensUsed Int      @default(0)
+  createdAt  DateTime @default(now())
+}
